@@ -1,75 +1,21 @@
 #! /bin/bash
 
 # Author: Ivan Gladushko
-# Version: v1.0
-# Date: 2020/08/16
+# Version: v1.2
+# Date: 2021/01/08
 
-# To Do
-# "Unverified" file deduplication
-# 
-
-# This script is used to sort media files (jpg, jpeg, mp4, mpg and mov ). 
+#  rEXIFier is a Shell-written EXIF-based media file processor with sort, dedup and other features.
+#
+#  This script is used to sort media files (jpg, jpeg, mp4, mpg and mov ). 
 #  It uses EXIFTOOL to extract "SubSecCreateDate", "CreateDate" and 
 #  "Model" metadata. If EXIF attempts fail, then less reliable file attributes get
 #  extracted as the last resort. In case the file attribute 
 #  extaction fails, the source filename gets amended by adding
-#  "UNVERIFIED-" prefix
+#  "UNVERIFIED-" prefix.
 #
-# File Processing Overview
+#   Refer to README.md for more information.
 #
-# Step 1. Search media files in Source Directory and 
-# SourceDirectory/
-#   file01.jpg
-#   file02.jpeg
-#   file03.mov
-#   file04.jpeg
-#   file05.mov
-#
-# Step 2. Create temporary Work-In-Progress (WIP) directory
-# SourceDirectory/WIP-YYYYMMDD-HHmmss
-#
-# Step 3. Move the found files to temporary Work-In-Progress (WIP) directory
-#
-# SourceDirectory/WIP-YYYYMMDD-HHmmss
-#   file01.jpg
-#   file02.jpeg
-#   file03.mov
-#   file04.jpeg
-#   file05.mov
-#
-# Step 4. Create directories:
-#         FileUnverified directory for files with corrupted/unreadable metadata
-#         FileNameDuplicates directory for by-name duplicates between Work-In-Progress and Destination Directory, i.e. 
-#           files with matching names and non-matching content
-#         FileContentDuplicates directory for by-content duplicates in the Destination Directory, i.e. 
-#           files with non-matching names and matching content
-#
-# DestinationDirectory/FileUnverified
-# DestinationDirectory/FileNameDuplicates
-# DestinationDirectory/FileContentDuplicates
-#
-# Step 5. Prepare and move the WIP files to DestinationDirectory with YYYY/MM/DD structure
-#
-# DestinationDirectory/
-#   FileUnverified/
-#     file01.jpg
-#   FileNameDuplicates/
-#     file02.jpeg
-#   FileContentDuplicates/
-#   2007/
-#       05/
-#         01/
-#           file03.mov
-#   2009/
-#       12/
-#         29/
-#           file04.jpeg
-#   2015/
-#       01/
-#         17/
-#           file05.mov
-#
-# Credits for tips and inspiration
+# Credits and source of inspiration
 # https://stackoverflow.com/questions/32062159/how-retrieve-the-creation-date-of-photos-with-a-script
 #
 #=======================================================================
@@ -78,6 +24,8 @@
 #   20200607 v0.5: EXIF SubSecCreateDate and CreateDate extractions added
 #   20200723 v0.9: EXIF Model and File System ModifyTime extractions added
 #   20200816 v1.0: alpha-version of Minimal Viable Product with file duplication avoidance
+#   20201216 v1.1: changed README, function names and miscelanious
+#   20210108 v1.2: added filename deduplication process for duplicates
 #=======================================================================
 
 
@@ -679,7 +627,8 @@ for WIPSortedFileAbsolutePath in ${WIPSortedFileAbsolutePaths[@]}; do
     # Modify filename as per format if tag/attribute extraction is successful
     else
       FormatedFileName=${MODEL}-${YEAR}${MONTH}${DAY}-${HOUR}${MINUTE}${SECOND}-${SUBSECOND}.${NormalisedFileExtension}
-      FormatedShortenFileName=${MODEL}-${YEAR}${MONTH}${DAY}-${HOUR}${MINUTE}${SECOND}-
+      FormatedFileNameNoExtension=${MODEL}-${YEAR}${MONTH}${DAY}-${HOUR}${MINUTE}${SECOND}-${SUBSECOND}
+      FormatedShortenedFileName=${MODEL}-${YEAR}${MONTH}${DAY}-${HOUR}${MINUTE}${SECOND}-
     fi
 
     # Debug output
@@ -693,7 +642,7 @@ for WIPSortedFileAbsolutePath in ${WIPSortedFileAbsolutePaths[@]}; do
         exit
       else
         # Checking if Destination FileName exists
-        if [[ ! -f ${DestinationPath}/${YEAR}/${MONTH}/${DAY}/${FormatedFileName} ]] ; then        
+        if [[ ! -f ${DestinationPath}/${YEAR}/${MONTH}/${DAY}/${FormatedFileName} ]] ; then 
           # Moving the file to the Desination File Path
           if ( ! mv ${WIPSortedFileAbsolutePath} ${DestinationPath}/${YEAR}/${MONTH}/${DAY}/${FormatedFileName} ) ; then
             printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${YEAR}/${MONTH}/${DAY}/${FormatedFileName} FAILED\n"
@@ -704,7 +653,7 @@ for WIPSortedFileAbsolutePath in ${WIPSortedFileAbsolutePaths[@]}; do
         #   Destination Directory matching the shortened file basename and process them to avoid duplicates
         else
           # Search for shortened file basename match
-          MatchedFileNames=$(find ${DestinationPath}/${YEAR}/${MONTH}/${DAY} -maxdepth 1 -type f -iname "${FormatedShortenFileName}*.${NormalisedFileExtension}" )
+          MatchedFileNames=$(find ${DestinationPath}/${YEAR}/${MONTH}/${DAY} -maxdepth 1 -type f -iname "${FormatedShortenedFileName}*.${NormalisedFileExtension}" )
           # Sorting file names to process them sequentially
           FileListSorter ${MatchedFileNames}
           # Returning the value from FileListSorter function by assigning the value of output (SortedFileList) to an array
@@ -736,6 +685,7 @@ for WIPSortedFileAbsolutePath in ${WIPSortedFileAbsolutePaths[@]}; do
           if [[ CheckSumMatchCount -eq 0 ]] ; then
             # Getting the last member with highest SUBSECOND number in the sorted array of matched filenames
             LastSortedMatchedFileName=${SortedMatchedFileNames[@]: -1}
+            printf "\nLastSortedMatchedFileName is $LastSortedMatchedFileName\n"
             # Extracting file basename
             LastSortedMatchedFileBasename=$(basename ${LastSortedMatchedFileName})
             # Extracting file name
@@ -755,23 +705,63 @@ for WIPSortedFileAbsolutePath in ${WIPSortedFileAbsolutePaths[@]}; do
               printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${YEAR}/${MONTH}/${DAY}/${FormatedFileName} ${NOTE} SUCCESSFUL\n"
             fi
           fi
-          # Processing the WIP file if message digest match found in one file
-          # Confirming the destination is writable by creating FileNameDuplicates file path, piping errors to NULL
+          # Processing the WIP file if message digest match was found
           FileNameDuplicates="FileNameDuplicates"
           if [[ CheckSumMatchCount -eq 1 ]] ; then
+            # Confirming the destination is writable by creating FileNameDuplicates file path, piping errors to NULL
             if ( ! mkdir -p ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName} >/dev/null 2>&1 ) ; then
               printf "Error! Directory ${DestinationPath} does not appear to be writable, exiting\n"
               exit
             else
-              # Moving the file to the FileNameDuplicates directory for review
-              if ( ! mv ${WIPSortedFileAbsolutePath} ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ) ; then
-                printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} FAILED\n"
+              # To avoid overwriting the destination file with a duplicate, checking if Destination FileName exists
+              if [[ ! -f ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ]] ; then 
+                # Moving the file to the FileNameDuplicates directory for review
+                if ( ! mv ${WIPSortedFileAbsolutePath} ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ) ; then
+                  printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} FAILED\n"
+                else
+                  printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ${NOTE} SUCCESSFUL\n"
+                fi
+              # If the duplicate file exists, run deduplication process (the filename will be amended by adding an index)
               else
-                printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ${NOTE} SUCCESSFUL\n"
+                # Search for file basename match
+                MatchedFileNameDuplicates=$(find ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName} -maxdepth 1 -type f -iname "${FormatedFileNameNoExtension}*.${NormalisedFileExtension}" )
+                # Sorting file names to process them sequentially
+                FileListSorter ${MatchedFileNameDuplicates}
+                # Returning the value from FileListSorter function by assigning the value of output (SortedFileList) to an array
+                # Bash functions, unlike functions in most programming languages do not allow you to return values to the caller
+                SortedMatchedFileNameDuplicates=${SortedFileList}
+                # Resetting SortedFileList array for sanity
+                SortedFileList=""
+                # Getting the last member in the sorted array of matched filenames, mind the difference in the construct 
+                # ${var[@]-1} finds the last element, versus ${var[@] -1} finds the last character of the last element
+                # ${var[*]-1} and ${var[*] -1} perform as above
+                LastSortedMatchedFileNameDuplicate=${SortedMatchedFileNameDuplicates[@]:-1}
+                # Extracting file basename
+                LastSortedMatchedFileDuplicateBasename=$(basename ${LastSortedMatchedFileNameDuplicate})
+                # Extracting file name
+                LastSortedMatchedFileNameDuplicate=${LastSortedMatchedFileDuplicateBasename%.*} 
+                # Extracting the duplicate index
+                LastSortedMatchedFileDuplicateIndex=$(echo ${LastSortedMatchedFileNameDuplicate} | awk -F "-" '{print $5}')
+                # Setting the value if the filename does not contain a duplicate index
+                if [[ LastSortedMatchedFileDuplicateIndex == "" ]] ; then
+                  LastSortedMatchedFileDuplicateIndex="00"
+                fi
+                # Incrementing the duplicate index so that we can form a new File Name
+                printf -v IncrementedLastSortedMatchedFileDuplicateIndex %02d "$((10#$LastSortedMatchedFileDuplicateIndex + 1))"
+                # Passing the incremented duplicate index to IncrementedDuplicateIndex
+                IncrementedDuplicateIndex=${IncrementedLastSortedMatchedFileDuplicateIndex}
+                # Re-forming the File Name with the incremented duplicate index
+                FormatedFileName=${FormatedFileNameNoExtension}-${IncrementedDuplicateIndex}.${NormalisedFileExtension}
+                # Moving the file to the Desination File Path
+                if ( ! mv ${WIPSortedFileAbsolutePath} ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ) ; then
+                  printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} FAILED\n"
+                else
+                  printf "Moving ${WIPSortedFileAbsolutePath} to ${DestinationPath}/${FileNameDuplicates}/${WIPDirectoryName}/${FormatedFileName} ${NOTE} SUCCESSFUL\n"
+                fi
               fi
             fi              
           fi
-          # If the message digest match was more than once, it means the Destination Directory contains 
+          # If the message digest match was found more than once, it means the Destination Directory contains 
           # files with the same content and difference file names, i.e. by-content duplicates
           FileContentDuplicates="FileContentDuplicates"
           if [[ CheckSumMatchCount -gt 1 ]] ; then
@@ -783,10 +773,51 @@ for WIPSortedFileAbsolutePath in ${WIPSortedFileAbsolutePaths[@]}; do
               # from Destination Directory to the FileContentDuplicates directory for review.
               # That first file is treated as the original file
               for DestinationDuplicateFile in ${DestinationDuplicateFiles[@]:1} ; do 
-                if ( ! mv ${DestinationDuplicateFile} "${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/" ) ; then
-                  printf "Moving ${DestinationDuplicateFile} to '${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/' FAILED\n"
+                # To avoid overwriting the destination file with a duplicate, checking if Destination FileName exists
+                if [[ ! -f ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} ]] ; then 
+                  # Moving the file to the FileContentDuplicates directory for review
+                  if ( ! mv ${DestinationDuplicateFile} ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} ) ; then
+                    printf "Moving ${DestinationDuplicateFile} to ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} FAILED\n"
+                  else
+                    printf "Moving ${DestinationDuplicateFile} to ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} ${NOTE} SUCCESSFUL\n"
+                  fi
+                # If the duplicate file exists, run deduplication process (the filename will be amended by adding an index)
                 else
-                  printf "Moving ${DestinationDuplicateFile} to '${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/' ${NOTE} SUCCESSFUL\n"
+                  # Search for file basename match
+                  MatchedFileContentDuplicates=$(find ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName} -maxdepth 1 -type f -iname "${FormatedFileNameNoExtension}*.${NormalisedFileExtension}" )
+                  # Sorting file names to process them sequentially
+                  FileListSorter ${MatchedFileContentDuplicates}
+                  # Returning the value from FileListSorter function by assigning the value of output (SortedFileList) to an array
+                  # Bash functions, unlike functions in most programming languages do not allow you to return values to the caller
+                  SortedMatchedFileContentDuplicates=${SortedFileList}
+                  # Resetting SortedFileList array for sanity
+                  SortedFileList=""
+                  # Getting the last member in the sorted array of matched filenames, mind the difference in the construct 
+                  # ${var[@]-1} finds the last element, versus ${var[@] -1} finds the last character of the last element
+                  # ${var[*]-1} and ${var[*] -1} perform as above
+                  LastSortedMatchedFileContentDuplicate=${SortedMatchedFileContentDuplicates[@]:-1}
+                  # Extracting file basename
+                  LastSortedMatchedFileDuplicateBasename=$(basename ${LastSortedMatchedFileContentDuplicate})
+                  # Extracting file name
+                  LastSortedMatchedFileContentDuplicate=${LastSortedMatchedFileDuplicateBasename%.*} 
+                  # Extracting the duplicate index
+                  LastSortedMatchedFileDuplicateIndex=$(echo ${LastSortedMatchedFileNameDuplicate} | awk -F "-" '{print $5}')
+                  # Setting the value if the filename does not contain a duplicate index
+                  if [[ LastSortedMatchedFileDuplicateIndex == "" ]] ; then
+                    LastSortedMatchedFileDuplicateIndex="00"
+                  fi
+                  # Incrementing the duplicate index so that we can form a new File Name
+                  printf -v IncrementedLastSortedMatchedFileDuplicateIndex %02d "$((10#$LastSortedMatchedFileDuplicateIndex + 1))"
+                  # Passing the incremented duplicate index to IncrementedDuplicateIndex
+                  IncrementedDuplicateIndex=${IncrementedLastSortedMatchedFileDuplicateIndex}
+                  # Re-forming the File Name with the incremented duplicate index
+                  FormatedFileName=${FormatedFileNameNoExtension}-${IncrementedDuplicateIndex}.${NormalisedFileExtension}
+                  # Moving the file to the FileContentDuplicates directory for review
+                  if ( ! mv ${DestinationDuplicateFile} ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} ) ; then
+                    printf "Moving ${DestinationDuplicateFile} to ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} FAILED\n"
+                  else
+                    printf "Moving ${DestinationDuplicateFile} to ${DestinationPath}/${FileContentDuplicates}/${WIPDirectoryName}/${FormatedFileName} ${NOTE} SUCCESSFUL\n"
+                  fi
                 fi
               done
             fi              
