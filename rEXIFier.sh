@@ -1,5 +1,7 @@
 #! /bin/bash
 
+# Note! This project morphed into the Neatly-Sorted project https://github.com/ivang-coder/Neatly-Sorted. This repo/code is stable, however it is no longer maintained.
+
 # Author: Ivan Gladushko
 # Version: v1.7
 # Date: 2022-01-01

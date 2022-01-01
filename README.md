@@ -1,3 +1,5 @@
+# Note! This project morphed into the Neatly-Sorted project https://github.com/ivang-coder/Neatly-Sorted. This repo/code is stable, however it is no longer maintained.
+
 # rEXIFier Readme
 rEXIFier is a Shell-written EXIF-based media file processor with sort and deduplication features.
 
